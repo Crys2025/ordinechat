@@ -1,12 +1,6 @@
 """
-Crawler oficial pentru OrdineChat + Qdrant.
-Versiune FINALĂ – stabilă, rezistentă la toate erorile.
-
-- ignoră linkurile de share
-- ignoră redirecturi
-- ignoră pagini ciudate (r.php, ?share=)
-- nu crăpă pe 404/403
-- returnează ÎNTOTDEAUNA valori valide
+Crawler stabil pentru OrdineChat + Qdrant.
+Optimizat 100% pentru Qdrant Cloud Free (batchuri mici + retry).
 """
 
 import os
@@ -18,6 +12,7 @@ from bs4 import BeautifulSoup
 from openai import OpenAI
 from qdrant_client import QdrantClient
 from qdrant_client.models import VectorParams, Distance, PointStruct
+from qdrant_client.http.exceptions import ResponseHandlingException
 
 BASE_URL = "https://ordinesaudezordine.com/"
 EMBEDDING_MODEL = "text-embedding-3-small"
@@ -28,12 +23,14 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 qdrant = QdrantClient(
     url=os.getenv("QDRANT_URL"),
     api_key=os.getenv("QDRANT_API_KEY"),
+    timeout=30.0  # timeout mare, dar sigur
 )
 
+# Linkuri care nu trebuie vizitate niciodată
 BAD_LINK_PARTS = [
     "facebook.com", "twitter.com", "linkedin.com", "pinterest",
     "utm_", "share", "login", "wp-login", "password", "checkpoint",
-    "mailto:", "tel:", "r.php", "redirect", "wp-json"
+    "r.php", "redirect", "wp-json", "mailto:", "tel:"
 ]
 
 def create_collection_if_not_exists(dim: int = 1536):
@@ -48,9 +45,6 @@ def create_collection_if_not_exists(dim: int = 1536):
         print(f"[OK] Colecția '{COLLECTION_NAME}' există deja.")
 
 
-# -------------------------------------------------------
-# FUNCTIE BLINDATĂ - NU VA RETURNA NICIODATĂ VALORI INVALIDATE
-# -------------------------------------------------------
 def get_links_and_text(url: str):
     print(f"[CRAWL] {url}")
 
@@ -59,11 +53,10 @@ def get_links_and_text(url: str):
         resp.raise_for_status()
     except Exception as e:
         print(f"[E] Nu pot accesa {url}: {e}")
-        return [], ("", "")  # <-- forma corectă, nu crăpă
+        return [], ("", "")
 
     soup = BeautifulSoup(resp.text, "html.parser")
 
-    # Eliminăm taguri fără conținut util
     for tag in soup(["script", "style", "noscript", "header", "footer", "svg"]):
         tag.decompose()
 
@@ -71,40 +64,36 @@ def get_links_and_text(url: str):
     if len(text.split()) < 30:
         return [], ("", "")
 
-    # Titlu
     title_tag = soup.find("title")
     title = title_tag.text.strip() if title_tag else url
 
-    # Linkuri curate
     clean_links = []
     for a in soup.find_all("a", href=True):
         href = a["href"].strip()
         href = urljoin(url, href)
         href, _ = urldefrag(href)
 
-        # Ignorăm linkurile nedorite
         if any(bad in href.lower() for bad in BAD_LINK_PARTS):
             continue
 
         if href.startswith(BASE_URL):
             clean_links.append(href)
 
-    # RETURN GARANTAT VALID
     return list(set(clean_links)), (title, text)
 
 
-def chunk_text(text: str, max_tokens: int = 400):
+def chunk_text(text: str, max_tokens: int = 350):
     words = text.split()
-    chunks, chunk = [], []
+    chunk, chunks = [], []
 
     for w in words:
         chunk.append(w)
         if len(chunk) >= max_tokens:
             chunks.append(" ".join(chunk))
             chunk = []
-
     if chunk:
         chunks.append(" ".join(chunk))
+
     return chunks
 
 
@@ -116,6 +105,24 @@ def embed_texts(texts):
     return [d.embedding for d in resp.data]
 
 
+# --------------------------
+# QDRANT SAFE UPSERT (batch mic + retry)
+# --------------------------
+def safe_qdrant_upsert(points_batch):
+    for retry in range(5):  # până la 5 încercări
+        try:
+            qdrant.upsert(
+                collection_name=COLLECTION_NAME,
+                points=points_batch
+            )
+            return True
+        except ResponseHandlingException as e:
+            print(f"[WARN] Qdrant timeout, retry {retry+1}/5...")
+            time.sleep(1 + retry * 1.5)
+    print("[FATAL] Qdrant nu a răspuns după 5 încercări.")
+    return False
+
+
 def main():
     create_collection_if_not_exists()
 
@@ -125,28 +132,25 @@ def main():
 
     while to_visit:
         url = to_visit.pop()
+
         if url in visited:
             continue
         visited.add(url)
 
         links, (title, text) = get_links_and_text(url)
 
-        # Adăugăm linkuri noi
         for l in links:
             if l not in visited:
                 to_visit.append(l)
 
-        # Dacă pagina nu are conținut, continuăm
         if not text or len(text.split()) < 30:
             continue
 
-        # Spargem în bucăți
         chunks = chunk_text(text)
         print(f"[INFO] {url} -> {len(chunks)} bucăți")
 
         vectors = embed_texts(chunks)
 
-        # Construim puncte Qdrant
         for vec, chunk in zip(vectors, chunks):
             buffer_points.append(
                 PointStruct(
@@ -160,29 +164,27 @@ def main():
                 )
             )
 
-        # Trimitem la Qdrant
-        if len(buffer_points) >= 40:
-            qdrant.upsert(
-                collection_name=COLLECTION_NAME,
-                points=buffer_points
-            )
-            print(f"[UPSERT] {len(buffer_points)} puncte trimise.")
-            buffer_points = []
+        # Trimitem în loturi de câte 3 puncte
+        while len(buffer_points) >= 3:
+            batch = buffer_points[:3]
+            if safe_qdrant_upsert(batch):
+                print(f"[UPSERT] 3 puncte trimise.")
+            buffer_points = buffer_points[3:]
 
-        time.sleep(0.3)
+        time.sleep(0.2)
 
     # Trimitem restul
-    if buffer_points:
-        qdrant.upsert(
-            collection_name=COLLECTION_NAME,
-            points=buffer_points
-        )
-        print(f"[UPSERT FINAL] {len(buffer_points)} puncte trimise.")
+    while buffer_points:
+        batch = buffer_points[:3]
+        if safe_qdrant_upsert(batch):
+            print(f"[UPSERT FINAL] {len(batch)} puncte trimise.")
+        buffer_points = buffer_points[3:]
 
     print("[GATA] Indexare completă în Qdrant.")
 
 
 if __name__ == "__main__":
     main()
+
 
 
