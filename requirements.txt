@@ -1,7 +1,8 @@
 fastapi
 uvicorn
 openai
-chromadb
+qdrant-client
 requests
 beautifulsoup4
 tiktoken
+python-dotenv
