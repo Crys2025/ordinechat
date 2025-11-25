@@ -1,6 +1,10 @@
 """
-CRAWLER LIGHT – Indexează DOAR articolele noi.
-Filtrează media, HTML-only, rapid pentru cron job.
+CRAWLER LIGHT – Final, stabil, optimizat pentru CRON JOB
+- Indexează DOAR articole noi
+- Acceptă DOAR HTML
+- Filtrează media (mp4/jpg/pdf/etc)
+- Creează automat index pentru `url`
+- Perfect pentru rulare zilnică la 03:00
 """
 
 import os
@@ -17,6 +21,7 @@ from qdrant_client.models import (
 )
 from qdrant_client.http.exceptions import ResponseHandlingException
 
+
 BASE_URL = "https://ordinesaudezordine.com/"
 EMBEDDING_MODEL = "text-embedding-3-small"
 COLLECTION_NAME = os.getenv("COLLECTION_NAME", "ordine_site")
@@ -30,11 +35,31 @@ qdrant = QdrantClient(
 )
 
 MEDIA_EXT = [
-    ".jpg", ".jpeg", ".png", ".gif", ".svg",
+    ".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp",
     ".mp4", ".mov", ".avi", ".mp3", ".webm",
     ".pdf", ".zip", ".rar", ".7z",
-    ".doc", ".docx"
+    ".doc", ".docx", ".xlsx", ".pptx"
 ]
+
+BAD_LINK_PARTS = [
+    "facebook.com", "twitter.com", "linkedin.com", "pinterest",
+    "utm_", "share", "login", "wp-login", "password",
+    "checkpoint", "redirect", "r.php", "wp-json",
+    "mailto:", "tel:"
+]
+
+
+def create_index_if_needed():
+    """Creează index pe `url` dacă nu există."""
+    try:
+        qdrant.create_payload_index(
+            collection_name=COLLECTION_NAME,
+            field_name="url",
+            field_type="keyword"
+        )
+        print("[OK] Index-ul 'url' creat.")
+    except Exception:
+        print("[OK] Index-ul 'url' există deja.")
 
 
 def fetch_latest_articles():
@@ -49,9 +74,13 @@ def fetch_latest_articles():
         href = urljoin(BASE_URL, a["href"])
         href, _ = urldefrag(href)
 
+        if any(bad in href.lower() for bad in BAD_LINK_PARTS):
+            continue
+
         if any(href.lower().endswith(ext) for ext in MEDIA_EXT):
             continue
 
+        # articolele WordPress au cel puțin 4 segmente în URL
         if href.startswith(BASE_URL) and len(href.split("/")) > 4:
             links.append(href)
 
@@ -63,12 +92,7 @@ def article_already_indexed(url: str) -> bool:
     scroll = qdrant.scroll(
         collection_name=COLLECTION_NAME,
         scroll_filter=Filter(
-            must=[
-                FieldCondition(
-                    key="url",
-                    match=MatchValue(value=url)
-                )
-            ]
+            must=[FieldCondition(key="url", match=MatchValue(value=url))]
         ),
         limit=1
     )
@@ -87,7 +111,7 @@ def process_article(url: str):
 
     # Acceptăm doar HTML
     if "text/html" not in resp.headers.get("content-type", ""):
-        print("[SKIP] Conținut non-HTML.")
+        print("[SKIP] Non-HTML.")
         return
 
     soup = BeautifulSoup(resp.text, "html.parser")
@@ -99,8 +123,7 @@ def process_article(url: str):
         print("[SKIP] Text insuficient.")
         return
 
-    title_tag = soup.find("title")
-    title = title_tag.text.strip() if title_tag else url
+    title = soup.find("title").text.strip() if soup.find("title") else url
 
     chunks = chunk_text(text)
     vectors = embed_texts(chunks)
@@ -111,22 +134,17 @@ def process_article(url: str):
             PointStruct(
                 id=str(uuid.uuid4()),
                 vector=vec,
-                payload={
-                    "url": url,
-                    "title": title,
-                    "text": chunk,
-                }
+                payload={"url": url, "title": title, "text": chunk}
             )
         )
 
-    print(f"[INFO] {len(points)} bucăți → upload")
+    print(f"[INFO] Upload: {len(points)} bucăți")
     batch_upload(points)
 
 
 def chunk_text(text, max_tokens=350):
     words = text.split()
     chunks, chunk = [], []
-
     for w in words:
         chunk.append(w)
         if len(chunk) >= max_tokens:
@@ -164,11 +182,13 @@ def batch_upload(points, batch_size=3):
 def main():
     print("=== START CRAWLER LIGHT ===")
 
+    create_index_if_needed()
+
     articles = fetch_latest_articles()
     print(f"[INFO] {len(articles)} articole detectate.")
 
     new_articles = [a for a in articles if not article_already_indexed(a)]
-    print(f"[INFO] Articole noi: {len(new_articles)}")
+    print(f"[INFO] Articole NOI: {len(new_articles)}")
 
     for url in new_articles:
         process_article(url)
@@ -178,4 +198,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
