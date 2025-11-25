@@ -1,10 +1,11 @@
 """
-CRAWLER FULL (INTELIGENT)
-- Indexează TOT site-ul
-- Sare peste paginile deja indexate (NO DUPLICATES)
+CRAWLER FULL (INTELIGENT – VARIANTA FINALĂ)
+- Indexează TOT site-ul WordPress
+- SARE peste URL-urile deja indexate (No duplicates!)
+- Filtrează media (mp4/jpg/pdf/etc)
 - Acceptă DOAR HTML
-- Ignoră fișiere media (mp4, jpg, pdf etc.)
-- Perfect stabil pentru reindexări totale
+- Creează automat index pentru câmpul `url`
+- Stabil, sigur, recomandat pentru reindexări totale
 """
 
 import os
@@ -34,14 +35,17 @@ qdrant = QdrantClient(
     timeout=30.0
 )
 
+# Linkuri de ignorat complet
 BAD_LINK_PARTS = [
-    "facebook.com", "twitter.com", "linkedin.com", "pinterest", "utm_",
-    "share", "login", "wp-login", "password", "checkpoint", "redirect",
-    "r.php", "wp-json", "mailto:", "tel:"
+    "facebook.com", "twitter.com", "linkedin.com", "pinterest",
+    "utm_", "share", "login", "wp-login", "password",
+    "checkpoint", "redirect", "r.php", "wp-json",
+    "mailto:", "tel:"
 ]
 
+# Fișiere media și binare
 MEDIA_EXT = [
-    ".jpg", ".jpeg", ".png", ".gif", ".svg",
+    ".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp",
     ".mp4", ".mov", ".avi", ".mp3", ".webm",
     ".pdf", ".zip", ".rar", ".7z",
     ".doc", ".docx", ".xlsx", ".pptx"
@@ -49,7 +53,9 @@ MEDIA_EXT = [
 
 
 def create_collection_if_not_exists(dim=1536):
+    """Creează colecția dacă nu există și adaugă index pentru `url`."""
     existing = [c.name for c in qdrant.get_collections().collections]
+
     if COLLECTION_NAME not in existing:
         qdrant.recreate_collection(
             collection_name=COLLECTION_NAME,
@@ -59,9 +65,20 @@ def create_collection_if_not_exists(dim=1536):
     else:
         print(f"[OK] Colecția '{COLLECTION_NAME}' există deja.")
 
+    # Creăm index pentru câmpul "url" (necesar pentru skip duplicate)
+    try:
+        qdrant.create_payload_index(
+            collection_name=COLLECTION_NAME,
+            field_name="url",
+            field_type="keyword"
+        )
+        print("[OK] Index-ul 'url' a fost creat.")
+    except Exception:
+        print("[OK] Index-ul 'url' există deja.")
+
 
 def is_url_indexed(url: str) -> bool:
-    """Verifică dacă URL-ul are deja puncte în Qdrant."""
+    """Verifică dacă URL-ul este deja indexat în Qdrant."""
     scroll = qdrant.scroll(
         collection_name=COLLECTION_NAME,
         scroll_filter=Filter(
@@ -73,9 +90,10 @@ def is_url_indexed(url: str) -> bool:
 
 
 def get_links_and_text(url: str):
+    """Returnează linkurile interne și textul paginii, dacă este HTML."""
     print(f"[CRAWL] {url}")
 
-    # Ignorăm fișiere media
+    # Ignorăm media
     if any(url.lower().endswith(ext) for ext in MEDIA_EXT):
         print("[SKIP] Fișier media.")
         return [], ("", "")
@@ -87,7 +105,7 @@ def get_links_and_text(url: str):
         print(f"[E] Eroare accesare {url}: {e}")
         return [], ("", "")
 
-    # Acceptăm DOAR HTML
+    # Acceptăm doar HTML
     content_type = resp.headers.get("content-type", "")
     if "text/html" not in content_type:
         print(f"[SKIP] Non-HTML ({content_type})")
@@ -103,10 +121,11 @@ def get_links_and_text(url: str):
 
     title = soup.find("title").text.strip() if soup.find("title") else url
 
-    # linkuri curate
+    # procesăm linkuri
     clean_links = []
     for a in soup.find_all("a", href=True):
-        href = urljoin(url, a["href"]).split("#")[0]
+        href = urljoin(url, a["href"])
+        href, _ = urldefrag(href)
 
         if any(bad in href.lower() for bad in BAD_LINK_PARTS):
             continue
@@ -134,18 +153,21 @@ def chunk_text(text, max_tokens=350):
 
 
 def embed_texts(texts):
-    resp = client.embeddings.create(model=EMBEDDING_MODEL, input=texts)
+    resp = client.embeddings.create(
+        model=EMBEDDING_MODEL,
+        input=texts
+    )
     return [d.embedding for d in resp.data]
 
 
-def safe_upsert(points_batch):
+def safe_upsert(batch):
     for retry in range(5):
         try:
-            qdrant.upsert(collection_name=COLLECTION_NAME, points=points_batch)
+            qdrant.upsert(collection_name=COLLECTION_NAME, points=batch)
             return True
         except ResponseHandlingException:
             print(f"[WARN] Timeout Qdrant, retry {retry+1}/5…")
-            time.sleep(1 + retry)
+            time.sleep(retry + 1)
     return False
 
 
@@ -163,7 +185,7 @@ def main():
             continue
         visited.add(url)
 
-        # ⭐ PAS NOU: dacă URL-ul există deja în Qdrant → îl sărim
+        # ⭐ SKIP dacă este deja indexat
         if is_url_indexed(url):
             print(f"[SKIP] Deja indexat: {url}")
             continue
@@ -194,21 +216,22 @@ def main():
         while len(buffer) >= 3:
             batch = buffer[:3]
             if safe_upsert(batch):
-                print(f"[UPSERT] 3 puncte trimise.")
+                print("[UPSERT] 3 puncte trimise.")
             buffer = buffer[3:]
 
-    # restul
+    # trimitem restul
     while buffer:
         batch = buffer[:3]
         if safe_upsert(batch):
             print(f"[UPSERT FINAL] {len(batch)} puncte trimise.")
         buffer = buffer[3:]
 
-    print("[GATA] Indexare FULL cu skip duplicări.")
+    print("[GATA] Indexare completă fără duplicate.")
 
 
 if __name__ == "__main__":
     main()
+
 
 
 
