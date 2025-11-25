@@ -1,6 +1,6 @@
 """
-Crawler LIGHT – indexează DOAR articolele noi.
-Ideal pentru cron job zilnic.
+CRAWLER LIGHT – Indexează DOAR articolele noi.
+Filtrează media, HTML-only, rapid pentru cron job.
 """
 
 import os
@@ -29,17 +29,18 @@ qdrant = QdrantClient(
     timeout=30.0
 )
 
-BAD_LINK_PARTS = [
-    "facebook.com", "twitter.com", "linkedin.com", "pinterest",
-    "utm_", "share", "login", "wp-login", "password", "checkpoint",
-    "r.php", "redirect", "wp-json", "mailto:", "tel:"
+MEDIA_EXT = [
+    ".jpg", ".jpeg", ".png", ".gif", ".svg",
+    ".mp4", ".mov", ".avi", ".mp3", ".webm",
+    ".pdf", ".zip", ".rar", ".7z",
+    ".doc", ".docx"
 ]
 
 
 def fetch_latest_articles():
-    """Returnează link-urile articolelor din pagina principală a blogului."""
-    print("[INFO] Pregătesc lista articolelor...")
-    resp = requests.get(BASE_URL)
+    """Returnează link-urile articolelor din homepage."""
+    print("[INFO] Preiau articolele din homepage...")
+    resp = requests.get(BASE_URL, timeout=10)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
 
@@ -48,7 +49,7 @@ def fetch_latest_articles():
         href = urljoin(BASE_URL, a["href"])
         href, _ = urldefrag(href)
 
-        if any(bad in href.lower() for bad in BAD_LINK_PARTS):
+        if any(href.lower().endswith(ext) for ext in MEDIA_EXT):
             continue
 
         if href.startswith(BASE_URL) and len(href.split("/")) > 4:
@@ -58,7 +59,7 @@ def fetch_latest_articles():
 
 
 def article_already_indexed(url: str) -> bool:
-    """Verifică dacă articolul există deja în Qdrant."""
+    """Verifică dacă articolul este deja în Qdrant."""
     scroll = qdrant.scroll(
         collection_name=COLLECTION_NAME,
         scroll_filter=Filter(
@@ -74,37 +75,28 @@ def article_already_indexed(url: str) -> bool:
     return len(scroll[0]) > 0
 
 
-def safe_upsert(points_batch):
-    """Upsert stabil + retry."""
-    for retry in range(5):
-        try:
-            qdrant.upsert(collection_name=COLLECTION_NAME, points=points_batch)
-            return True
-        except ResponseHandlingException:
-            print(f"[WARN] Timeout Qdrant, retry {retry+1}/5…")
-            time.sleep(1 + retry)
-    print("[FATAL] Qdrant nu răspunde.")
-    return False
-
-
 def process_article(url: str):
     print(f"\n[CRAWL] {url}")
 
     try:
         resp = requests.get(url, timeout=10)
         resp.raise_for_status()
-    except:
-        print(f"[SKIP] Nu pot accesa {url}")
+    except Exception:
+        print("[SKIP] Nu pot accesa articolul.")
+        return
+
+    # Acceptăm doar HTML
+    if "text/html" not in resp.headers.get("content-type", ""):
+        print("[SKIP] Conținut non-HTML.")
         return
 
     soup = BeautifulSoup(resp.text, "html.parser")
-
-    for tag in soup(["script", "style", "svg", "noscript", "header", "footer"]):
+    for tag in soup(["script", "style", "svg", "noscript"]):
         tag.decompose()
 
     text = soup.get_text(" ", strip=True)
     if len(text.split()) < 30:
-        print("[SKIP] Prea puțin text.")
+        print("[SKIP] Text insuficient.")
         return
 
     title_tag = soup.find("title")
@@ -122,13 +114,13 @@ def process_article(url: str):
                 payload={
                     "url": url,
                     "title": title,
-                    "text": chunk
+                    "text": chunk,
                 }
             )
         )
 
-    print(f"[INFO] {len(points)} bucăți de text → upload în Qdrant...")
-    batch_upload(points, batch_size=3)
+    print(f"[INFO] {len(points)} bucăți → upload")
+    batch_upload(points)
 
 
 def chunk_text(text, max_tokens=350):
@@ -142,13 +134,23 @@ def chunk_text(text, max_tokens=350):
             chunk = []
     if chunk:
         chunks.append(" ".join(chunk))
-
     return chunks
 
 
 def embed_texts(texts):
     resp = client.embeddings.create(model=EMBEDDING_MODEL, input=texts)
     return [d.embedding for d in resp.data]
+
+
+def safe_upsert(batch):
+    for retry in range(5):
+        try:
+            qdrant.upsert(collection_name=COLLECTION_NAME, points=batch)
+            return True
+        except ResponseHandlingException:
+            print(f"[WARN] Timeout Qdrant, retry {retry+1}/5…")
+            time.sleep(1 + retry)
+    return False
 
 
 def batch_upload(points, batch_size=3):
@@ -161,26 +163,19 @@ def batch_upload(points, batch_size=3):
 
 def main():
     print("=== START CRAWLER LIGHT ===")
+
     articles = fetch_latest_articles()
-    print(f"[INFO] Am găsit {len(articles)} articole în homepage.")
+    print(f"[INFO] {len(articles)} articole detectate.")
 
-    new_articles = []
+    new_articles = [a for a in articles if not article_already_indexed(a)]
+    print(f"[INFO] Articole noi: {len(new_articles)}")
 
-    for url in articles:
-        if not article_already_indexed(url):
-            new_articles.append(url)
-
-    if not new_articles:
-        print("[INFO] Nu există articole noi.")
-        return
-
-    print(f"[INFO] Articole noi găsite: {len(new_articles)}")
-
-    for article_url in new_articles:
-        process_article(article_url)
+    for url in new_articles:
+        process_article(url)
 
     print("=== GATA LIGHT INDEX ===")
 
 
 if __name__ == "__main__":
     main()
+
