@@ -1,5 +1,6 @@
 import os
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
@@ -12,10 +13,13 @@ COLLECTION_NAME = os.getenv("COLLECTION_NAME", "ordine_site")
 
 app = FastAPI()
 
-# CORS - permite apeluri de la site-ul tău
+# 🔥 OBLIGATORIU pentru a servi ordinebot.js
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # poți restricționa pe domeniul tău
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -37,7 +41,6 @@ def root():
 
 @app.post("/ask")
 def ask(question: Question):
-    # obținem embedding pentru întrebare
     emb_response = client.embeddings.create(
         model=EMBEDDING_MODEL,
         input=question.query
@@ -51,8 +54,10 @@ def ask(question: Question):
     )
 
     if not search_result:
-        # fallback: doar GPT, fără context (mai slab, dar nu moare)
-        prompt = f"Tu ești OrdineBot, asistentul site-ului ordinesaudezordine.com. Răspunde politicos la întrebarea: {question.query}"
+        prompt = (
+            f"Tu ești OrdineBot, asistentul site-ului ordinesaudezordine.com. "
+            f'Răspunde: "{question.query}"'
+        )
         resp = client.responses.create(
             model=OPENAI_MODEL,
             input=prompt
@@ -72,13 +77,15 @@ def ask(question: Question):
 
     system_prompt = (
         "Tu ești OrdineBot, asistentul oficial al site-ului ordinesaudezordine.com. "
-        "Răspunzi cald, prietenos, profesionist, ca autoarea blogului. "
-        "Folosești DOAR informațiile din contextul dat. "
-        "Dacă nu găsești ceva în context, spune politicos că nu e clar din articole. "
-        "La final, când este relevant, sugerează 1-3 articole cu titlu și URL."
+        "Răspunzi cald, prietenos, profesionist. "
+        "Folosești DOAR informațiile din contextul dat."
     )
 
-    full_prompt = f"Context articole:\n{context}\n\nÎntrebare utilizator: {question.query}\nRăspuns OrdineBot:"
+    full_prompt = (
+        f"Context articole:\n{context}\n\n"
+        f"Întrebare utilizator: {question.query}\n"
+        "Răspuns OrdineBot:"
+    )
 
     response = client.responses.create(
         model=OPENAI_MODEL,
