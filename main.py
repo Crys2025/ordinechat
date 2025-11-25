@@ -19,10 +19,12 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://ordinesaudezordine.com", "https://www.ordinesaudezordine.com"],
+    allow_origin_regex=".*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
