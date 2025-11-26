@@ -12,16 +12,27 @@ function scrollMessages() {
     box.scrollTop = box.scrollHeight;
 }
 
+function saveChat() {
+    sessionStorage.setItem("ordineChatHistory",
+        document.getElementById("ai-chat-messages").innerHTML
+    );
+}
+
 function addUserMessage(msg) {
     const box = document.getElementById('ai-chat-messages');
     box.innerHTML += `<div class="user-msg">${msg}</div>`;
     scrollMessages();
+    saveChat();
 }
 
 function addBotMessage(msg) {
     const box = document.getElementById('ai-chat-messages');
+
+    // permite HTML în mesajele botului (linkuri active)
     box.innerHTML += `<div class="bot-msg">${msg}</div>`;
+
     scrollMessages();
+    saveChat();
 }
 
 async function sendMessage() {
@@ -47,15 +58,25 @@ async function sendMessage() {
         addBotMessage(data.answer);
 
     } catch (err) {
+        document.querySelector(".bot-msg:last-child").remove();
         addBotMessage("❌ Serverul nu răspunde. Mai încearcă puțin.");
     }
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+
+    // 🔥 Restaurăm conversația dacă există
+    const saved = sessionStorage.getItem("ordineChatHistory");
+    if (saved) {
+        document.getElementById("ai-chat-messages").innerHTML = saved;
+        scrollMessages();
+    }
+
     document.getElementById("ai-bot-bubble").onclick = toggleChat;
 
     document.getElementById("ai-chat-input").addEventListener("keydown", ev => {
         if (ev.key === "Enter") sendMessage();
     });
 });
+
 
