@@ -7,6 +7,7 @@ for key in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles       # ⭐ ADĂUGAT
 from pydantic import BaseModel
 from qdrant_client import QdrantClient
 
@@ -25,6 +26,9 @@ qdrant = QdrantClient(
 )
 
 app = FastAPI()
+
+# ⭐ AICI SE REZOLVĂ PROBLEMA TA
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 app.add_middleware(
     CORSMiddleware,
@@ -55,6 +59,7 @@ def ask(question: Question):
         limit=5
     )
 
+    # Dacă nu sunt rezultate din Qdrant → răspuns direct de la model
     if not hits:
         resp = client.responses.create(
             model=OPENAI_MODEL,
@@ -62,10 +67,15 @@ def ask(question: Question):
         )
         return {"answer": resp.output_text}
 
+    # Construim contextul din articole
     context = ""
     for h in hits:
         p = h.payload or {}
-        context += f"Titlu: {p.get('title')}\nURL: {p.get('url')}\nText: {p.get('text')}\n\n---\n\n"
+        context += (
+            f"Titlu: {p.get('title')}\n"
+            f"URL: {p.get('url')}\n"
+            f"Text: {p.get('text')}\n\n---\n\n"
+        )
 
     system = (
         "Tu ești OrdineBot, asistentul oficial al site-ului. "
@@ -85,6 +95,7 @@ def ask(question: Question):
     )
 
     return {"answer": resp.output_text}
+
 
 
 
