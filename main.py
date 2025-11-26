@@ -70,7 +70,7 @@ def ask(question: Question):
                 {"role": "user", "content": f"Răspunde ca OrdineBot: {question.query}"}
             ]
         )
-        return {"answer": resp.choices[0].message["content"]}
+        return {"answer": resp.choices[0].message.content}
 
     # Build context
     context = ""
@@ -99,7 +99,8 @@ def ask(question: Question):
         ]
     )
 
-    return {"answer": resp.choices[0].message["content"]}
+    return {"answer": resp.choices[0].message.content}
+
 
 
 
