@@ -1,8 +1,9 @@
-fastapi
-uvicorn
-openai
-qdrant-client>=1.9.0
-requests
-beautifulsoup4
-tiktoken
-python-dotenv
+fastapi==0.115.0
+uvicorn==0.30.0
+openai==1.52.0
+qdrant-client==1.10.0
+requests==2.32.3
+beautifulsoup4==4.12.3
+tiktoken==0.7.0
+python-dotenv==1.0.1
+
