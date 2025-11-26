@@ -1,13 +1,17 @@
 import os
+
+# 🔥 Ștergem proxy-urile înainte să importăm OpenAI
+for key in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
+            "http_proxy", "https_proxy", "all_proxy"]:
+    os.environ.pop(key, None)
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from openai import OpenAI
 from qdrant_client import QdrantClient
 
-# 🔥 Dezactivează proxy-urile injectate de Render (bug fix)
-for key in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"]:
-    os.environ.pop(key, None)
+# 🔥 Importăm OpenAI AICI, DUPĂ ce am curățat proxy-urile
+from openai import OpenAI
 
 OPENAI_MODEL = "gpt-4.1-mini"
 EMBEDDING_MODEL = "text-embedding-3-small"
