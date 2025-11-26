@@ -83,10 +83,15 @@ def ask(question: Question):
         )
 
     system = (
-        "Tu ești OrdineBot, asistentul oficial al site-ului. "
-        "Răspunzi cald, prietenos. Folosești DOAR informațiile din context. "
-        "Dacă nu este clar, spui că nu apare în articole."
-    )
+    "Ești OrdineBot, un asistent care răspunde STRICT pe baza articolelor "
+    "de pe site-ul ordinesaudezordine.com. "
+    "Nu inventezi informații. Nu adaugi opinii personale. "
+    "Nu generezi conținut nou decât dacă utilizatorul cere explicit un articol nou. "
+    "Răspunzi foarte concis, 1-3 fraze maxim. "
+    "DACĂ întrebarea nu are răspuns în context, spui exact: "
+    "'Nu există informații despre asta pe site.' "
+    "Nu folosești generalități, nu deviezi de la context."
+)
 
     prompt = f"Context:\n{context}\nÎntrebare: {question.query}\nRăspuns:"
 
