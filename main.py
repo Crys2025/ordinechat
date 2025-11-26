@@ -7,11 +7,11 @@ for key in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles       # ⭐ ADĂUGAT
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from qdrant_client import QdrantClient
 
-# 🔥 Importăm OpenAI AICI, DUPĂ ce am curățat proxy-urile
+# Import OpenAI
 from openai import OpenAI
 
 OPENAI_MODEL = "gpt-4.1-mini"
@@ -27,7 +27,7 @@ qdrant = QdrantClient(
 
 app = FastAPI()
 
-# ⭐ AICI SE REZOLVĂ PROBLEMA TA
+# Serving static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 app.add_middleware(
@@ -47,27 +47,32 @@ def home():
 @app.post("/ask")
 def ask(question: Question):
 
+    # Generate embeddings
     emb = client.embeddings.create(
         model=EMBEDDING_MODEL,
         input=question.query
     )
     vector = emb.data[0].embedding
 
+    # Query Qdrant
     hits = qdrant.search(
         collection_name=COLLECTION_NAME,
         query_vector=vector,
         limit=5
     )
 
-    # Dacă nu sunt rezultate din Qdrant → răspuns direct de la model
+    # No context → direct OpenAI answer
     if not hits:
-        resp = client.responses.create(
+        resp = client.chat.completions.create(
             model=OPENAI_MODEL,
-            input=f"Răspunde ca OrdineBot: {question.query}"
+            messages=[
+                {"role": "system", "content": "Ești OrdineBot"},
+                {"role": "user", "content": f"Răspunde ca OrdineBot: {question.query}"}
+            ]
         )
-        return {"answer": resp.output_text}
+        return {"answer": resp.choices[0].message["content"]}
 
-    # Construim contextul din articole
+    # Build context
     context = ""
     for h in hits:
         p = h.payload or {}
@@ -79,22 +84,23 @@ def ask(question: Question):
 
     system = (
         "Tu ești OrdineBot, asistentul oficial al site-ului. "
-        "Răspunzi cald, prietenos. "
-        "Folosești DOAR informațiile din context. "
+        "Răspunzi cald, prietenos. Folosești DOAR informațiile din context. "
         "Dacă nu este clar, spui că nu apare în articole."
     )
 
     prompt = f"Context:\n{context}\nÎntrebare: {question.query}\nRăspuns:"
 
-    resp = client.responses.create(
+    # Final RAG completion
+    resp = client.chat.completions.create(
         model=OPENAI_MODEL,
-        input=[
+        messages=[
             {"role": "system", "content": system},
-            {"role": "user", "content": prompt},
+            {"role": "user", "content": prompt}
         ]
     )
 
-    return {"answer": resp.output_text}
+    return {"answer": resp.choices[0].message["content"]}
+
 
 
 
