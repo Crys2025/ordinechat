@@ -4,5 +4,4 @@ openai==1.52.0
 qdrant-client==1.10.0
 requests==2.32.3
 beautifulsoup4==4.12.3
-tiktoken==0.5.2
 python-dotenv==1.0.1
