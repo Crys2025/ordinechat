@@ -17,26 +17,44 @@ import smtplib
 from email.mime.text import MIMEText
 
 
-# ⭐ ADĂUGAT — email administrator
-ADMIN_EMAIL = "facuteincasa@aol.ro"
-ADMIN_PASS = "PAROLA_TA_AOL"
+# ⭐ ADĂUGAT — configurare email administrator
+ADMIN_EMAIL = "ionutf993@gmail.com"
+
+# autentificare Yahoo SMTP
+SMTP_USER = "crys_20010@yahoo.com"
+SMTP_PASS = "Ionut1989@"   # <-- pune aici parola reală
+
+SMTP_SERVER = "android.smtp.mail.yahoo.com"
+SMTP_PORT = 465  # Yahoo folosește SSL
+
 
 def send_missing_email(query):
     """Trimite email când nu există informații în Qdrant."""
-    msg = MIMEText(f"Un utilizator a căutat: {query}\n\nDar nu există informații pe site.")
-    msg["Subject"] = "⚠️ GemeniBot – Conținut lipsă"
-    msg["From"] = ADMIN_EMAIL
+
+    body = (
+        f"Un utilizator a căutat următorul subiect în GemeniBot:\n\n"
+        f"🔎 Căutare: {query}\n\n"
+        f"❗ Dar nu există informații pe site.\n"
+        f"👉 Ar fi util să adaugi conținut pe acest subiect."
+    )
+
+    msg = MIMEText(body)
+    msg["Subject"] = "⚠️ GemeniBot – Subiect căutat fără rezultate"
+    msg["From"] = SMTP_USER
     msg["To"] = ADMIN_EMAIL
 
     try:
-        server = smtplib.SMTP("smtp.aol.com", 587)
-        server.starttls()
-        server.login(ADMIN_EMAIL, ADMIN_PASS)
-        server.sendmail(ADMIN_EMAIL, ADMIN_EMAIL, msg.as_string())
+        # Yahoo cere SSL direct
+        server = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT)
+        server.login(SMTP_USER, SMTP_PASS)
+        server.sendmail(SMTP_USER, [ADMIN_EMAIL], msg.as_string())
         server.quit()
+
         print("📩 Email trimis administratorului.")
+
     except Exception as e:
         print("❌ Eroare trimitere email:", e)
+
 
 
 # 🔧 Config modele + colecție
@@ -70,7 +88,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # 📩 Schema request – TRIMITEM ÎNTREAGA CONVERSAȚIE
 class Question(BaseModel):
-    messages: list  # [{role: "user"/"assistant", content: "..."}, ...]
+    messages: list  
 
 
 @app.get("/")
@@ -81,7 +99,6 @@ def home():
 @app.post("/ask")
 def ask(question: Question):
 
-    # 🧠 Memorie conversațională – extragem ultimul mesaj de la user
     conversation_history = question.messages
     last_user_messages = [m for m in conversation_history if m.get("role") == "user"]
 
@@ -106,7 +123,7 @@ def ask(question: Question):
 
     # ❗ Dacă nu găsim nimic în Qdrant → răspundem + trimitem email
     if not hits:
-        send_missing_email(current_query)  # ⭐ AICI ESTE SINGURA MODIFICARE LOGICĂ
+        send_missing_email(current_query)
         return {"answer": f"Nu există informații despre {current_query} pe site."}
 
     # 🧱 Construim contextul din articole
@@ -119,18 +136,16 @@ def ask(question: Question):
             f"Text: {payload.get('text')}\n\n---\n\n"
         )
 
-    # 🧠 Prompt de sistem – OrdineBot + memorie conversațională
     system = (
         "Ești OrdineBot, un asistent care răspunde STRICT pe baza articolelor "
         "de pe site-ul ordinesaudezordine.com/. "
         "Ai memorie conversațională: folosești întrebările și răspunsurile anterioare "
-        "ca să deduci la ce se referă utilizatorul când spune, de exemplu, "
+        "ca să deduci la ce se referă utilizatorul când spune expresii precum "
         "'dă-mi linkul' sau 'arată-mi articolul'. "
-        "Nu inventezi informații. Nu adaugi opinii personale. "
-        "Răspunzi foarte concis, 1-3 fraze maxim. "
-        "DACĂ întrebarea nu are răspuns în context, spui exact: "
+        "Nu inventezi informații. "
+        "Răspunzi concis (1–3 fraze). "
+        "Dacă informația nu apare în context, spune EXACT: "
         "'Nu există informații despre asta pe site.' "
-        "Nu folosești generalități, nu deviezi de la context."
     )
 
     messages = [
@@ -144,4 +159,5 @@ def ask(question: Question):
     )
 
     return {"answer": resp.choices[0].message.content}
+
 
