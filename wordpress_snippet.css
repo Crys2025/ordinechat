@@ -1,0 +1,70 @@
+/* CSS snippet for GemeniBot chat widget on pentrumamedegemeni.ro */
+#ai-bot-bubble {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  background: #ff7aa2;
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0,0,0,.15);
+  z-index: 9999;
+  font-weight: 600;
+}
+
+#ai-chat-box {
+  position: fixed;
+  right: 20px;
+  bottom: 70px;
+  width: 340px;
+  max-height: 60vh;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.2);
+  display: none;
+  z-index: 9999;
+  overflow: hidden;
+  font-size: 14px;
+}
+
+#ai-chat-header {
+  background: #ff7aa2;
+  color: #fff;
+  padding: 10px 14px;
+  font-weight: 700;
+}
+
+#ai-chat-messages {
+  padding: 10px;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.user-msg {
+  background: #f1f1f1;
+  padding: 6px 10px;
+  border-radius: 12px;
+  margin: 6px 0;
+  margin-left: 40px;
+}
+
+.bot-msg {
+  background: #ffe4ec;
+  padding: 6px 10px;
+  border-radius: 12px;
+  margin: 6px 0;
+  margin-right: 40px;
+}
+
+#ai-chat-bottom {
+  border-top: 1px solid #eee;
+  padding: 8px;
+}
+
+#ai-chat-input {
+  width: 100%;
+  border: 1px solid #ddd;
+  border-radius: 999px;
+  padding: 6px 10px;
+}

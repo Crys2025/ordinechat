@@ -1,6 +1,6 @@
 import os
 
-# 🔥 Ștergem proxy-urile înainte să importăm OpenAI
+# 🔥 Ștergem proxy-urile înainte să importăm OpenAI (ca să nu dea eroare pe server)
 for key in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
             "http_proxy", "https_proxy", "all_proxy"]:
     os.environ.pop(key, None)
@@ -11,13 +11,14 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from qdrant_client import QdrantClient
 
-# Import OpenAI
 from openai import OpenAI
 
-OPENAI_MODEL = "gpt-4.1-mini"
-EMBEDDING_MODEL = "text-embedding-3-small"
-COLLECTION_NAME = os.getenv("COLLECTION_NAME", "ordine_site")
+# 🔧 Config modele + colecție
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+COLLECTION_NAME = os.getenv("COLLECTION_NAME", "gemeni_site")
 
+# 🔑 Clienți OpenAI + Qdrant
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 qdrant = QdrantClient(
@@ -25,91 +26,105 @@ qdrant = QdrantClient(
     api_key=os.getenv("QDRANT_API_KEY")
 )
 
+# 🚀 FastAPI app
 app = FastAPI()
 
-# Serving static files
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
+# CORS – permite apeluri din WordPress / alt domeniu
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Servire fișiere statice (ordinebot.js etc.)
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+# 📩 Schema request – TRIMITEM ÎNTREAGA CONVERSAȚIE
 class Question(BaseModel):
-    query: str
+    messages: list  # [{role: "user"/"assistant", content: "..."}, ...]
+
 
 @app.get("/")
 def home():
-    return {"status": "ok", "message": "OrdineBot backend online"}
+    return {"status": "ok", "message": "GemeniBot backend online"}
+
 
 @app.post("/ask")
 def ask(question: Question):
+    """
+    Endpoint-ul principal.
+    Primește toată conversația (messages) și folosește:
+    - ultimul mesaj de la user pentru căutarea în Qdrant
+    - toată conversația ca memorie pentru model
+    """
 
-    # Generate embeddings
+    # 🧠 Memorie conversațională – extragem ultimul mesaj de la user
+    conversation_history = question.messages
+    last_user_messages = [m for m in conversation_history if m.get("role") == "user"]
+
+    if not last_user_messages:
+        return {"answer": "Nu există un mesaj de utilizator în conversație."}
+
+    current_query = last_user_messages[-1]["content"]
+
+    # 📌 Embedding pe ÎNTREBAREA CURENTĂ
     emb = client.embeddings.create(
         model=EMBEDDING_MODEL,
-        input=question.query
+        input=current_query,
     )
     vector = emb.data[0].embedding
 
-    # Query Qdrant
+    # 🔍 Căutare în Qdrant
     hits = qdrant.search(
         collection_name=COLLECTION_NAME,
         query_vector=vector,
-        limit=5
+        limit=5,
     )
 
-    # No context → direct OpenAI answer
+    # ❗ Dacă nu găsim nimic în Qdrant → răspundem explicit
     if not hits:
-        resp = client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": "Ești OrdineBot"},
-                {"role": "user", "content": f"Răspunde ca OrdineBot: {question.query}"}
-            ]
-        )
-        return {"answer": resp.choices[0].message.content}
+        return {"answer": "Nu există informații despre asta pe site."}
 
-    # Build context
+    # 🧱 Construim contextul din articole
     context = ""
     for h in hits:
-        p = h.payload or {}
+        payload = h.payload or {}
         context += (
-            f"Titlu: {p.get('title')}\n"
-            f"URL: {p.get('url')}\n"
-            f"Text: {p.get('text')}\n\n---\n\n"
+            f"Titlu: {payload.get('title')}\n"
+            f"URL: {payload.get('url')}\n"
+            f"Text: {payload.get('text')}\n\n---\n\n"
         )
 
+    # 🧠 Prompt de sistem – GemeniBot + memorie conversațională
     system = (
-    "Ești OrdineBot, un asistent care răspunde STRICT pe baza articolelor "
-    "de pe site-ul ordinesaudezordine.com. "
-    "Nu inventezi informații. Nu adaugi opinii personale. "
-    "Nu generezi conținut nou decât dacă utilizatorul cere explicit un articol nou. "
-    "Răspunzi foarte concis, 1-3 fraze maxim. "
-    "DACĂ întrebarea nu are răspuns în context, spui exact: "
-    "'Nu există informații despre asta pe site.' "
-    "Nu folosești generalități, nu deviezi de la context."
-)
+        "Ești GemeniBot, un asistent care răspunde STRICT pe baza articolelor "
+        "de pe site-ul pentrumamedegemeni.ro. "
+        "Ai memorie conversațională: folosești întrebările și răspunsurile anterioare "
+        "ca să deduci la ce se referă utilizatorul când spune, de exemplu, "
+        "'dă-mi linkul' sau 'arată-mi articolul'. "
+        "Nu inventezi informații. Nu adaugi opinii personale. "
+        "Nu generezi conținut nou decât dacă utilizatorul cere explicit un articol nou. "
+        "Răspunzi foarte concis, 1-3 fraze maxim. "
+        "DACĂ întrebarea nu are răspuns în context, spui exact: "
+        "'Nu există informații despre asta pe site.' "
+        "Nu folosești generalități, nu deviezi de la context."
+    )
 
-    prompt = f"Context:\n{context}\nÎntrebare: {question.query}\nRăspuns:"
+    # 🧠 Trimitem către model:
+    # - instrucțiunile (system)
+    # - contextul din articole (alt system)
+    # - toată conversația user ↔ bot
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "system", "content": f"Context din articolele de pe site:\n{context}"},
+    ] + conversation_history
 
-    # Final RAG completion
     resp = client.chat.completions.create(
         model=OPENAI_MODEL,
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": prompt}
-        ]
+        messages=messages,
     )
 
     return {"answer": resp.choices[0].message.content}
-
-
-
-
-
-
-
-
