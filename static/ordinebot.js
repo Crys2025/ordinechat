@@ -42,7 +42,9 @@ function scrollMessages() {
 function saveChat() {
     const box = document.getElementById("ai-chat-messages");
     if (!box) return;
-    sessionStorage.setItem("GemeniBotHistory", box.innerHTML);
+
+    // FIX: numele corect și unic
+    sessionStorage.setItem("OrdineBotHistory", box.innerHTML);
 }
 
 /* ======================================================
@@ -91,7 +93,6 @@ function hideTyping() {
    AUTO DESCHIDERE DUPA 5 SECUNDE LA PRIMA VIZITA
 ====================================================== */
 function autoOpenChat() {
-    // dacă deja a fost deschis automat, nu mai deschidem din nou
     if (sessionStorage.getItem("GemeniBotAutoOpened")) return;
 
     setTimeout(() => {
@@ -142,7 +143,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const input = document.getElementById("ai-chat-input");
     const sendBtn = document.getElementById("ai-chat-send");
 
-    /* Restaurăm conversația */
+    /* FIX: Restaurăm conversația corect */
     const saved = sessionStorage.getItem("OrdineBotHistory");
     if (saved && messagesBox) {
         messagesBox.innerHTML = saved;
@@ -166,9 +167,9 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // auto-open
     autoOpenChat();
 });
+
 
 
 
