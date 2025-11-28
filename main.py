@@ -22,9 +22,9 @@ ADMIN_EMAIL = "ionutf993@gmail.com"
 
 # autentificare Yahoo SMTP
 SMTP_USER = "crys_20010@yahoo.com"
-SMTP_PASS = "Ionut1989@"   # <-- pune aici parola reală
+SMTP_PASS = "qsudzyyuiflgtlkl"   # <-- pune aici parola reală
 
-SMTP_SERVER = "android.smtp.mail.yahoo.com"
+SMTP_SERVER = "smtp.mail.yahoo.com"
 SMTP_PORT = 465  # Yahoo folosește SSL
 
 
@@ -32,14 +32,14 @@ def send_missing_email(query):
     """Trimite email când nu există informații în Qdrant."""
 
     body = (
-        f"Un utilizator a căutat următorul subiect în GemeniBot:\n\n"
+        f"Un utilizator a căutat următorul subiect în OrdineBot:\n\n"
         f"🔎 Căutare: {query}\n\n"
         f"❗ Dar nu există informații pe site.\n"
         f"👉 Ar fi util să adaugi conținut pe acest subiect."
     )
 
     msg = MIMEText(body)
-    msg["Subject"] = "⚠️ GemeniBot – Subiect căutat fără rezultate"
+    msg["Subject"] = "⚠️ OrdineBot – Subiect căutat fără rezultate"
     msg["From"] = SMTP_USER
     msg["To"] = ADMIN_EMAIL
 
