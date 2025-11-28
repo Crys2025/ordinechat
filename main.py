@@ -22,7 +22,7 @@ ADMIN_EMAIL = "ionutf993@gmail.com"
 
 # autentificare Yahoo SMTP
 SMTP_USER = "crys_20010@yahoo.com"
-SMTP_PASS = "qsudzyyuiflgtlkl"   # <-- pune aici parola reală
+SMTP_PASS = "wjxaglzhjgjycqez"   # <-- pune aici parola reală
 
 SMTP_SERVER = "smtp.mail.yahoo.com"
 SMTP_PORT = 465  # Yahoo folosește SSL
