@@ -12,20 +12,18 @@ from pydantic import BaseModel
 from qdrant_client import QdrantClient
 from openai import OpenAI
 
-# ⭐ ADĂUGAT — doar acestea
+# ⭐ Email
 import smtplib
 from email.mime.text import MIMEText
 
-
-# ⭐ ADĂUGAT — configurare email administrator
+# ⭐ IMPORTANT — email unde primește notificările
 ADMIN_EMAIL = "ionutf993@gmail.com"
 
-# autentificare Yahoo SMTP
+# Yahoo SMTP – folosim App Password
 SMTP_USER = "crys_20010@yahoo.com"
-SMTP_PASS = "wjxaglzhjgjycqez"   # <-- pune aici parola reală
-
+SMTP_PASS = "wjxaglzhjgjycqez"   # parola de aplicație Yahoo
 SMTP_SERVER = "smtp.mail.yahoo.com"
-SMTP_PORT = 465  # Yahoo folosește SSL
+SMTP_PORT = 465  # SSL obligatoriu
 
 
 def send_missing_email(query):
@@ -33,19 +31,24 @@ def send_missing_email(query):
 
     body = (
         f"Un utilizator a căutat următorul subiect în OrdineBot:\n\n"
-        f"🔎 Căutare: {query}\n\n"
-        f"❗ Dar nu există informații pe site.\n"
-        f"👉 Ar fi util să adaugi conținut pe acest subiect."
+        f"🔎 Căutare efectuată: {query}\n\n"
+        f"❗ Nu există informații pe site despre acest subiect.\n"
+        f"👉 Poți adăuga articole pe această temă."
     )
 
-    msg = MIMEText(body)
-    msg["Subject"] = "⚠️ OrdineBot – Subiect căutat fără rezultate"
+    # Yahoo cere explicit UTF-8
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["Subject"] = "OrdineBot – Subiect căutat fără rezultate"
     msg["From"] = SMTP_USER
     msg["To"] = ADMIN_EMAIL
+    msg["Reply-To"] = SMTP_USER
 
     try:
-        # Yahoo cere SSL direct
         server = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT)
+
+        # activăm debug pentru a vedea răspunsul Yahoo în loguri
+        server.set_debuglevel(1)
+
         server.login(SMTP_USER, SMTP_PASS)
         server.sendmail(SMTP_USER, [ADMIN_EMAIL], msg.as_string())
         server.quit()
@@ -121,7 +124,7 @@ def ask(question: Question):
         limit=5,
     )
 
-    # ❗ Dacă nu găsim nimic în Qdrant → răspundem + trimitem email
+    # ❗ Dacă nu există rezultate → trimitem email + răspuns bot
     if not hits:
         send_missing_email(current_query)
         return {"answer": f"Nu există informații despre {current_query} pe site."}
@@ -159,5 +162,6 @@ def ask(question: Question):
     )
 
     return {"answer": resp.choices[0].message.content}
+
 
 
