@@ -23,9 +23,9 @@ from qdrant_client.models import (
 from qdrant_client.http.exceptions import ResponseHandlingException
 
 
-BASE_URL = "https://pentrumamedegemeni.ro/"
+BASE_URL = "https://ordinesaudezordine.com//"
 EMBEDDING_MODEL = "text-embedding-3-small"
-COLLECTION_NAME = os.getenv("COLLECTION_NAME", "gemeni_site")
+COLLECTION_NAME = os.getenv("COLLECTION_NAME", "ordine_site")
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
