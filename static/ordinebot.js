@@ -1,4 +1,4 @@
-console.log("GemeniBot JS loaded");
+console.log("OrdineBot JS loaded");
 
 let openedAutomatically = false;
 let pgConversation = [];
@@ -96,7 +96,7 @@ function autoOpenChat() {
 
     setTimeout(() => {
         toggleChat();
-        addBotMessage("Bună! Sunt GemeniBot 💗 Cu ce pot să te ajut astăzi?");
+        addBotMessage("Bună! Sunt OrdineBot 💗 Cu ce pot să te ajut astăzi?");
         sessionStorage.setItem("GemeniBotAutoOpened", "1");
     }, 5000);
 }
@@ -117,7 +117,7 @@ async function sendMessage() {
     showTyping();
 
     try {
-        const response = await fetch("https://gemenichat.onrender.com/ask", {
+        const response = await fetch("https://ordinechat.onrender.com/ask", {
             method: "POST",
             headers: {"Content-Type": "application/json"},
             body: JSON.stringify({ messages: pgConversation })
@@ -143,7 +143,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const sendBtn = document.getElementById("ai-chat-send");
 
     /* Restaurăm conversația */
-    const saved = sessionStorage.getItem("GemeniBotHistory");
+    const saved = sessionStorage.getItem("OrdineBotHistory");
     if (saved && messagesBox) {
         messagesBox.innerHTML = saved;
 
