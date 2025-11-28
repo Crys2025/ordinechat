@@ -10,8 +10,34 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from qdrant_client import QdrantClient
-
 from openai import OpenAI
+
+# ⭐ ADĂUGAT — doar acestea
+import smtplib
+from email.mime.text import MIMEText
+
+
+# ⭐ ADĂUGAT — email administrator
+ADMIN_EMAIL = "facuteincasa@aol.ro"
+ADMIN_PASS = "PAROLA_TA_AOL"
+
+def send_missing_email(query):
+    """Trimite email când nu există informații în Qdrant."""
+    msg = MIMEText(f"Un utilizator a căutat: {query}\n\nDar nu există informații pe site.")
+    msg["Subject"] = "⚠️ GemeniBot – Conținut lipsă"
+    msg["From"] = ADMIN_EMAIL
+    msg["To"] = ADMIN_EMAIL
+
+    try:
+        server = smtplib.SMTP("smtp.aol.com", 587)
+        server.starttls()
+        server.login(ADMIN_EMAIL, ADMIN_PASS)
+        server.sendmail(ADMIN_EMAIL, ADMIN_EMAIL, msg.as_string())
+        server.quit()
+        print("📩 Email trimis administratorului.")
+    except Exception as e:
+        print("❌ Eroare trimitere email:", e)
+
 
 # 🔧 Config modele + colecție
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
@@ -54,12 +80,6 @@ def home():
 
 @app.post("/ask")
 def ask(question: Question):
-    """
-    Endpoint-ul principal.
-    Primește toată conversația (messages) și folosește:
-    - ultimul mesaj de la user pentru căutarea în Qdrant
-    - toată conversația ca memorie pentru model
-    """
 
     # 🧠 Memorie conversațională – extragem ultimul mesaj de la user
     conversation_history = question.messages
@@ -84,9 +104,10 @@ def ask(question: Question):
         limit=5,
     )
 
-    # ❗ Dacă nu găsim nimic în Qdrant → răspundem explicit
+    # ❗ Dacă nu găsim nimic în Qdrant → răspundem + trimitem email
     if not hits:
-        return {"answer": "Nu există informații despre asta pe site."}
+        send_missing_email(current_query)  # ⭐ AICI ESTE SINGURA MODIFICARE LOGICĂ
+        return {"answer": f"Nu există informații despre {current_query} pe site."}
 
     # 🧱 Construim contextul din articole
     context = ""
@@ -112,10 +133,6 @@ def ask(question: Question):
         "Nu folosești generalități, nu deviezi de la context."
     )
 
-    # 🧠 Trimitem către model:
-    # - instrucțiunile (system)
-    # - contextul din articole (alt system)
-    # - toată conversația user ↔ bot
     messages = [
         {"role": "system", "content": system},
         {"role": "system", "content": f"Context din articolele de pe site:\n{context}"},
@@ -127,3 +144,4 @@ def ask(question: Question):
     )
 
     return {"answer": resp.choices[0].message.content}
+
