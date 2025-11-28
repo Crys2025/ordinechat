@@ -27,7 +27,7 @@ SMTP_PORT = 465  # SSL obligatoriu
 
 
 def send_missing_email(query):
-    """Trimite email când nu există informații în Qdrant."""
+    """Trimite email când nu există informații în RĂSPUNSUL FINAL."""
 
     body = (
         f"Un utilizator a căutat următorul subiect în OrdineBot:\n\n"
@@ -36,7 +36,6 @@ def send_missing_email(query):
         f"👉 Poți adăuga articole pe această temă."
     )
 
-    # Yahoo cere explicit UTF-8
     msg = MIMEText(body, "plain", "utf-8")
     msg["Subject"] = "OrdineBot – Subiect căutat fără rezultate"
     msg["From"] = SMTP_USER
@@ -45,10 +44,7 @@ def send_missing_email(query):
 
     try:
         server = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT)
-
-        # activăm debug pentru a vedea răspunsul Yahoo în loguri
-        server.set_debuglevel(1)
-
+        server.set_debuglevel(1)  # log complet Yahoo SMTP
         server.login(SMTP_USER, SMTP_PASS)
         server.sendmail(SMTP_USER, [ADMIN_EMAIL], msg.as_string())
         server.quit()
@@ -57,7 +53,6 @@ def send_missing_email(query):
 
     except Exception as e:
         print("❌ Eroare trimitere email:", e)
-
 
 
 # 🔧 Config modele + colecție
@@ -124,11 +119,6 @@ def ask(question: Question):
         limit=5,
     )
 
-    # ❗ Dacă nu există rezultate → trimitem email + răspuns bot
-    if not hits:
-        send_missing_email(current_query)
-        return {"answer": f"Nu există informații despre {current_query} pe site."}
-
     # 🧱 Construim contextul din articole
     context = ""
     for h in hits:
@@ -139,6 +129,7 @@ def ask(question: Question):
             f"Text: {payload.get('text')}\n\n---\n\n"
         )
 
+    # Prompt sistem
     system = (
         "Ești OrdineBot, un asistent care răspunde STRICT pe baza articolelor "
         "de pe site-ul ordinesaudezordine.com/. "
@@ -161,7 +152,15 @@ def ask(question: Question):
         messages=messages,
     )
 
-    return {"answer": resp.choices[0].message.content}
+    final_answer = resp.choices[0].message.content
+
+    # 🔥 AICI este modificarea corectă:
+    # Trimitem email DOAR dacă modelul răspunde că nu există informații.
+    if "Nu există informații despre" in final_answer:
+        send_missing_email(current_query)
+
+    return {"answer": final_answer}
+
 
 
 
