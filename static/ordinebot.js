@@ -1,83 +1,177 @@
-console.log("OrdineBot JS loaded");
+console.log("GemeniBot JS loaded");
 
 let openedAutomatically = false;
+let pgConversation = [];
 
-function toggleChat() {
-    const chat = document.getElementById('ai-chat-box');
-    chat.style.display = (chat.style.display === 'block') ? 'none' : 'block';
+/* ======================================================
+   FUNCTIE LINKIFY - transforma linkurile in <a>
+====================================================== */
+function linkify(text) {
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    return text.replace(urlRegex, url => {
+        return `<a href="${url}" class="ai-link">${url}</a>`;
+    });
 }
 
+/* ======================================================
+   DESCHIDE / INCHIDE FEREASTRA - VARIANTA FINALA (.open)
+====================================================== */
+function toggleChat() {
+    const chat = document.getElementById('ai-chat-box');
+    if (!chat) return;
+
+    chat.classList.toggle("open");
+    scrollMessages();
+}
+
+// expunem global pentru HTML
+window.toggleChat = toggleChat;
+
+/* ======================================================
+   SCROLL
+====================================================== */
 function scrollMessages() {
     const box = document.getElementById('ai-chat-messages');
+    if (!box) return;
     box.scrollTop = box.scrollHeight;
 }
 
+/* ======================================================
+   SALVARE CONVERSATIE
+====================================================== */
 function saveChat() {
-    sessionStorage.setItem("ordineChatHistory",
-        document.getElementById("ai-chat-messages").innerHTML
-    );
+    const box = document.getElementById("ai-chat-messages");
+    if (!box) return;
+    sessionStorage.setItem("GemeniBotHistory", box.innerHTML);
 }
 
+/* ======================================================
+   ADAUGĂ MESAJ USER
+====================================================== */
 function addUserMessage(msg) {
     const box = document.getElementById('ai-chat-messages');
+    if (!box) return;
+
     box.innerHTML += `<div class="user-msg">${msg}</div>`;
+    pgConversation.push({ role: "user", content: msg });
+
     scrollMessages();
     saveChat();
 }
 
+/* ======================================================
+   ADAUGĂ MESAJ BOT
+====================================================== */
 function addBotMessage(msg) {
     const box = document.getElementById('ai-chat-messages');
+    if (!box) return;
 
-    // permite HTML în mesajele botului (linkuri active)
-    box.innerHTML += `<div class="bot-msg">${msg}</div>`;
+    box.innerHTML += `<div class="bot-msg">${linkify(msg)}</div>`;
+    pgConversation.push({ role: "assistant", content: msg });
 
     scrollMessages();
     saveChat();
 }
 
+/* ======================================================
+   ANIMATIA DE TYPING
+====================================================== */
+function showTyping() {
+    const typingBox = document.getElementById("ai-typing");
+    typingBox.style.display = "flex";
+    scrollMessages();
+}
+
+function hideTyping() {
+    const typingBox = document.getElementById("ai-typing");
+    typingBox.style.display = "none";
+}
+
+/* ======================================================
+   AUTO DESCHIDERE DUPA 5 SECUNDE LA PRIMA VIZITA
+====================================================== */
+function autoOpenChat() {
+    // dacă deja a fost deschis automat, nu mai deschidem din nou
+    if (sessionStorage.getItem("GemeniBotAutoOpened")) return;
+
+    setTimeout(() => {
+        toggleChat();
+        addBotMessage("Bună! Sunt GemeniBot 💗 Cu ce pot să te ajut astăzi?");
+        sessionStorage.setItem("GemeniBotAutoOpened", "1");
+    }, 5000);
+}
+
+/* ======================================================
+   TRIMITE MESAJ
+====================================================== */
 async function sendMessage() {
     const input = document.getElementById('ai-chat-input');
+    if (!input) return;
+
     const msg = input.value.trim();
     if (!msg) return;
 
     addUserMessage(msg);
     input.value = "";
 
-    addBotMessage("Scriu răspunsul...");
+    showTyping();
 
     try {
-        const response = await fetch("https://ordinechat.onrender.com/ask", {
+        const response = await fetch("https://gemenichat.onrender.com/ask", {
             method: "POST",
             headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({ query: msg })
+            body: JSON.stringify({ messages: pgConversation })
         });
 
         const data = await response.json();
-
-        document.querySelector(".bot-msg:last-child").remove();
+        hideTyping();
         addBotMessage(data.answer);
 
     } catch (err) {
-        document.querySelector(".bot-msg:last-child").remove();
-        addBotMessage("❌ Serverul nu răspunde. Mai încearcă puțin.");
+        hideTyping();
+        addBotMessage("❌ Serverul nu răspunde acum. Încearcă din nou.");
     }
 }
 
+/* ======================================================
+   INITIALIZARE
+====================================================== */
 document.addEventListener("DOMContentLoaded", () => {
+    const messagesBox = document.getElementById("ai-chat-messages");
+    const bubble = document.getElementById("ai-bot-bubble");
+    const input = document.getElementById("ai-chat-input");
+    const sendBtn = document.getElementById("ai-chat-send");
 
-    // 🔥 Restaurăm conversația dacă există
-    const saved = sessionStorage.getItem("ordineChatHistory");
-    if (saved) {
-        document.getElementById("ai-chat-messages").innerHTML = saved;
+    /* Restaurăm conversația */
+    const saved = sessionStorage.getItem("GemeniBotHistory");
+    if (saved && messagesBox) {
+        messagesBox.innerHTML = saved;
+
+        const nodes = messagesBox.querySelectorAll(".user-msg, .bot-msg");
+        nodes.forEach(el => {
+            const role = el.classList.contains("user-msg") ? "user" : "assistant";
+            const content = el.textContent;
+            pgConversation.push({ role, content });
+        });
+
         scrollMessages();
     }
 
-    document.getElementById("ai-bot-bubble").onclick = toggleChat;
+    if (bubble) bubble.onclick = toggleChat;
+    if (sendBtn) sendBtn.onclick = sendMessage;
 
-    document.getElementById("ai-chat-input").addEventListener("keydown", ev => {
-        if (ev.key === "Enter") sendMessage();
-    });
+    if (input) {
+        input.addEventListener("keydown", ev => {
+            if (ev.key === "Enter") sendMessage();
+        });
+    }
+
+    // auto-open
+    autoOpenChat();
 });
+
+
+
 
 
 
