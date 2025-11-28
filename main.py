@@ -16,7 +16,7 @@ from openai import OpenAI
 # 🔧 Config modele + colecție
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
-COLLECTION_NAME = os.getenv("COLLECTION_NAME", "gemeni_site")
+COLLECTION_NAME = os.getenv("COLLECTION_NAME", "ordine_site")
 
 # 🔑 Clienți OpenAI + Qdrant
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -49,7 +49,7 @@ class Question(BaseModel):
 
 @app.get("/")
 def home():
-    return {"status": "ok", "message": "GemeniBot backend online"}
+    return {"status": "ok", "message": "OrdineBot backend online"}
 
 
 @app.post("/ask")
@@ -98,15 +98,14 @@ def ask(question: Question):
             f"Text: {payload.get('text')}\n\n---\n\n"
         )
 
-    # 🧠 Prompt de sistem – GemeniBot + memorie conversațională
+    # 🧠 Prompt de sistem – OrdineBot + memorie conversațională
     system = (
-        "Ești GemeniBot, un asistent care răspunde STRICT pe baza articolelor "
-        "de pe site-ul pentrumamedegemeni.ro. "
+        "Ești OrdineBot, un asistent care răspunde STRICT pe baza articolelor "
+        "de pe site-ul ordinesaudezordine.com/. "
         "Ai memorie conversațională: folosești întrebările și răspunsurile anterioare "
         "ca să deduci la ce se referă utilizatorul când spune, de exemplu, "
         "'dă-mi linkul' sau 'arată-mi articolul'. "
         "Nu inventezi informații. Nu adaugi opinii personale. "
-        "Nu generezi conținut nou decât dacă utilizatorul cere explicit un articol nou. "
         "Răspunzi foarte concis, 1-3 fraze maxim. "
         "DACĂ întrebarea nu are răspuns în context, spui exact: "
         "'Nu există informații despre asta pe site.' "
