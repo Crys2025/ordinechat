@@ -17,7 +17,7 @@ import smtplib
 from email.mime.text import MIMEText
 
 # ⭐ IMPORTANT — email unde primește notificările
-ADMIN_EMAIL = "ionutf993@gmail.com"
+ADMIN_EMAIL = "contact@ordinesaudezordine.com"
 
 # Yahoo SMTP – folosim App Password
 SMTP_USER = "crys_20010@yahoo.com"
